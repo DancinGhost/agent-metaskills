@@ -8,7 +8,7 @@ description: >-
   or committing a skill, or when asked to check, validate, lint or review the
   structure of a SKILL.md.
 license: MIT
-compatibility: Requires python3 (3.9 or later, standard library only).
+compatibility: Requires python3 (3.10 or later, standard library only).
 metadata:
   version: "1.0.0"
 ---

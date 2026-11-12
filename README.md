@@ -86,7 +86,7 @@ harness's skills directory. Start a new session afterwards.
 
 ## Use the scripts without an agent
 
-The scripts need Python 3.9 or later and nothing else.
+The scripts need Python 3.10 or later and nothing else.
 
 ```bash
 # Validate skills. Exit 1 on errors; --strict also fails on warnings.
@@ -138,8 +138,8 @@ evil-skill
 To keep the skills in your own repository valid:
 
 ```yaml
-- uses: actions/checkout@v4
-- uses: actions/checkout@v4
+- uses: actions/checkout@v7
+- uses: actions/checkout@v7
   with:
     repository: DancinGhost/agent-metaskills
     path: .metaskills

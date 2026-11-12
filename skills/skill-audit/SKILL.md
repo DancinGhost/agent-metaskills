@@ -9,7 +9,7 @@ description: >-
   a pull request that adds or changes a skill, or after a skill behaved
   suspiciously.
 license: MIT
-compatibility: Requires python3 (3.9 or later, standard library only).
+compatibility: Requires python3 (3.10 or later, standard library only).
 metadata:
   version: "1.0.0"
 ---
