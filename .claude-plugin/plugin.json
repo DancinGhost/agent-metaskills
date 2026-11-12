@@ -1,0 +1,14 @@
+{
+  "name": "agent-metaskills",
+  "displayName": "Agent Metaskills",
+  "version": "1.0.0",
+  "description": "Skills about skills: lint, audit, inventory, port, distill, tune and debug Agent Skills.",
+  "author": {
+    "name": "DancinGhost",
+    "url": "https://github.com/DancinGhost"
+  },
+  "homepage": "https://github.com/DancinGhost/agent-metaskills",
+  "repository": "https://github.com/DancinGhost/agent-metaskills",
+  "license": "MIT",
+  "keywords": ["skills", "agent-skills", "meta", "lint", "security", "audit"]
+}

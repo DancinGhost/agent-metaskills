@@ -1,0 +1,27 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+permissions:
+  contents: read
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: ["3.9", "3.13"]
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Vendored helpers are in sync
+        run: python3 tools/sync_shared.py --check
+      - name: Unit tests
+        run: python3 -m unittest discover -s tests -v
+      - name: Lint the skills with their own linter
+        run: python3 skills/skill-lint/scripts/lint_skill.py skills --strict

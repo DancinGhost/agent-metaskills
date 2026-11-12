@@ -1,0 +1,14 @@
+{
+  "name": "agent-metaskills",
+  "description": "Skills about skills: tools for writing, checking and maintaining Agent Skills.",
+  "owner": {
+    "name": "DancinGhost"
+  },
+  "plugins": [
+    {
+      "name": "agent-metaskills",
+      "source": "./",
+      "description": "Lint, audit, inventory, port, distill, tune and debug Agent Skills."
+    }
+  ]
+}

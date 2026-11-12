@@ -1,0 +1,29 @@
+{
+  "skill": "REPLACE-WITH-SKILL-NAME",
+  "method": "real-runs | blind-judge | self-review",
+  "cases": [
+    {
+      "query": "REPLACE: a request exactly as a user would type it",
+      "should_trigger": true,
+      "holdout": false,
+      "note": "REPLACE: which use of the skill this covers"
+    },
+    {
+      "query": "REPLACE: a near miss that shares vocabulary but belongs elsewhere",
+      "should_trigger": false,
+      "holdout": false,
+      "note": "REPLACE: which skill, if any, should handle it"
+    }
+  ],
+  "runs": [
+    {
+      "description": "REPLACE: the description text that was tested",
+      "should_trigger_passed": 0,
+      "should_trigger_total": 0,
+      "should_not_trigger_passed": 0,
+      "should_not_trigger_total": 0,
+      "holdout_passed": null,
+      "failures": ["REPLACE: the queries that gave the wrong result"]
+    }
+  ]
+}
