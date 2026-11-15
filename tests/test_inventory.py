@@ -40,6 +40,17 @@ class Analysis(SkillCase):
         duplicates = self.run_json()["duplicates"]
         self.assertEqual([d["name"] for d in duplicates], ["release-notes"])
         self.assertEqual(len(duplicates[0]["paths"]), 2)
+        self.assertEqual(duplicates[0]["status"], "diverged")
+
+    def test_identical_and_symlinked_duplicates(self):
+        cursor = self.project / ".cursor" / "skills"
+        self.make_skill(
+            "pdf-forms",
+            md("pdf-forms", "Fills PDF forms and extracts fields from PDF documents. Use when the user asks to fill a PDF form."),
+            parent=cursor,
+        )
+        dups = {d["name"]: d for d in self.run_json()["duplicates"]}
+        self.assertEqual(dups["pdf-forms"]["status"], "identical")
 
     def test_broken_skills(self):
         broken = self.run_json()["broken"]

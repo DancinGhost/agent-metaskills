@@ -15,7 +15,7 @@ from __future__ import annotations
 
 import argparse
 import json
-import re
+import os
 import sys
 from pathlib import Path
 
@@ -31,61 +31,43 @@ USER_ROOTS = (
     ("Shared ~/.agents (Codex, Gemini CLI)", ".agents/skills"),
     ("Gemini CLI (user)", ".gemini/skills"),
     ("Antigravity (global)", ".gemini/config/skills"),
+    ("Antigravity (plugins)", ".gemini/config/plugins"),
     ("Antigravity (built-in)", ".gemini/antigravity/builtin/skills"),
+    ("Cursor (user)", ".cursor/skills"),
+    ("Windsurf (user)", ".codeium/windsurf/skills"),
+    ("OpenCode (user)", ".config/opencode/skills"),
+    ("GitHub Copilot (user)", ".copilot/skills"),
 )
 # (label, path relative to the project directory)
 PROJECT_ROOTS = (
     ("Claude Code (project)", ".claude/skills"),
     ("Shared .agents (Codex, Gemini CLI, Antigravity)", ".agents/skills"),
+    ("Antigravity (.agent)", ".agent/skills"),
     ("Gemini CLI (workspace)", ".gemini/skills"),
+    ("Cursor (project)", ".cursor/skills"),
+    ("Windsurf (project)", ".windsurf/skills"),
+    ("OpenCode (project)", ".opencode/skills"),
+    ("GitHub Copilot (project)", ".github/skills"),
 )
 SYSTEM_ROOTS = (("Codex (admin)", "/etc/codex/skills"),)
 
-STOPWORDS = set(
-    """a an and any are as at be been before by can do does for from has have
-    how if in into is it its may more must new not of on or other should so
-    such than that the their them then these this those to up use used user
-    users using when whenever where which while will with without you your
-    skill skills agent agents task tasks ask asks asked want wants need needs
-    mention mentions about also all each every etc e g i""".split()
-)
-
-
-def keywords(text: str) -> set:
-    words = re.findall(r"[a-z][a-z0-9+#.-]*[a-z0-9+#]|[a-z]", text.lower())
-    out = set()
-    for word in words:
-        word = word.strip(".-")
-        if len(word) < 3 or word in STOPWORDS:
-            continue
-        if word.endswith("ies") and len(word) > 5:
-            word = word[:-3] + "y"
-        elif word.endswith(("ing", "ed")) and len(word) > 5:
-            word = word[:-3] if word.endswith("ing") else word[:-2]
-        elif word.endswith("s") and not word.endswith("ss") and len(word) > 3:
-            word = word[:-1]
-        out.add(word)
-    return out
-
-
-def similarity(a: set, b: set) -> float:
-    if not a or not b:
-        return 0.0
-    return len(a & b) / len(a | b)
+STOPWORDS = meta.STOPWORDS
+keywords = meta.keywords
+similarity = meta.similarity
 
 
 def collect(roots: list) -> list:
     """Return one record per skill directory found under the given roots."""
-    records, seen = [], set()
+    records, seen_paths = [], set()
     for label, root in roots:
         root = Path(root)
         if not root.is_dir():
             continue
         for skill_dir in meta.find_skills(root, include_hidden=False):
-            real = skill_dir.resolve()
-            if real in seen:
+            logical = os.path.abspath(skill_dir)
+            if logical in seen_paths:
                 continue
-            seen.add(real)
+            seen_paths.add(logical)
             skill = meta.load_skill(skill_dir)
             problems = []
             if not skill.has_frontmatter:
@@ -115,7 +97,9 @@ def collect(roots: list) -> list:
                     "location": label,
                     "root": str(root),
                     "path": str(skill_dir),
+                    "realpath": str(skill_dir.resolve()),
                     "symlink": skill_dir.is_symlink(),
+                    "digest": meta.skill_digest(skill_dir),
                     "description": skill.description,
                     "description_chars": len(skill.description),
                     "listing_tokens": meta.estimate_tokens(listing),
@@ -127,12 +111,24 @@ def collect(roots: list) -> list:
     return records
 
 
+def _duplicate_status(group: list) -> str:
+    if len({r["realpath"] for r in group}) == 1:
+        return "symlinked"
+    if len({r["digest"] for r in group}) == 1:
+        return "identical"
+    return "diverged"
+
+
 def analyse(records: list, threshold: float) -> dict:
     by_name: dict = {}
     for record in records:
         by_name.setdefault(record["name"], []).append(record)
     duplicates = [
-        {"name": name, "paths": [r["path"] for r in group]}
+        {
+            "name": name,
+            "status": _duplicate_status(group),
+            "paths": [r["path"] for r in group],
+        }
         for name, group in sorted(by_name.items())
         if len(group) > 1
     ]
@@ -203,7 +199,8 @@ def format_text(records: list, analysis: dict, searched: list) -> str:
     if analysis["duplicates"]:
         out.append("\nSame name in more than one place (one copy shadows the others):")
         for item in analysis["duplicates"]:
-            out.append(f"  {item['name']}")
+            status = f"  [{item['status']}]" if "status" in item else ""
+            out.append(f"  {item['name']}{status}")
             out.extend(f"    {path}" for path in item["paths"])
     if analysis["broken"]:
         out.append("\nSkills that break the specification (some harnesses will not load them):")

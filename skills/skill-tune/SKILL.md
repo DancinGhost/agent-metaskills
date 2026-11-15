@@ -7,8 +7,9 @@ description: >-
   not handle, when two skills compete for the same request, or when asked to
   improve, optimise or rewrite a skill description.
 license: MIT
+compatibility: Requires python3 (3.10 or later, standard library only).
 metadata:
-  version: "1.0.0"
+  version: "1.1.0"
 ---
 
 # Skill tune
@@ -53,6 +54,18 @@ Save the set next to the skill, outside the skill directory, using the format
 in [assets/trigger-evals.template.json](assets/trigger-evals.template.json).
 Set aside a quarter of each half as a holdout and do not look at those while
 rewriting.
+
+Validate the test set and check lexical coverage with the helper script
+(paths below are relative to this skill's directory):
+
+```bash
+python3 scripts/eval_triggers.py <skill-dir> --evals <evals.json> [--root <skills-dir>] [--json]
+```
+
+The script checks that both halves and the holdout are populated, flags
+should-trigger queries that share no keywords with the description (blind
+spots), flags should-not queries that heavily overlap the description, and
+warns when a competing skill under `--root` has a stronger lexical match.
 
 Show the set to the user before going on. They know which requests are
 realistic.
@@ -114,6 +127,13 @@ Change the description to fix the failures seen in step 3, not in general.
   triggers and competes with every other skill doing the same.
 
 ## 5. Re-measure and iterate
+
+Before editing `SKILL.md`, you can test a candidate description against the
+evaluation set with:
+
+```bash
+python3 scripts/eval_triggers.py <skill-dir> --evals <evals.json> --description "<candidate>"
+```
 
 Run the same test with the new description. Keep the change only if the score
 improved without the other half getting worse. Up to three rounds; if it is

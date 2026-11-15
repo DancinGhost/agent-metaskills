@@ -186,6 +186,48 @@ class Warnings(LintCase):
         )
         self.assertEqual(sorted(self.codes(directory)), ["W040", "W050", "W060"])
 
+    def test_anchor_and_reference_file_links(self):
+        body = GOOD_BODY + (
+            "\nSee [good](#csv-to-table), [bad](#missing-section), "
+            "[ref](references/guide.md#details) and [bad ref](references/guide.md#nope).\n"
+            "\n[def-link]: references/missing-def.md\n"
+        )
+        directory = self.make_skill(
+            skill_md=GOOD_FRONTMATTER.format(name="csv-table") + body,
+            files={"references/guide.md": "# Guide\n\n## Details\n\nSee [broken](nowhere.md).\n"},
+        )
+        report = lint.lint_skill(directory)
+        e040 = [f for f in report.findings if f["code"] == "E040"]
+        self.assertEqual(len(e040), 4)
+
+    def test_crlf_in_script_raises_w043(self):
+        body = GOOD_BODY + "\nRun `scripts/run.sh`.\n"
+        directory = self.make_skill(
+            skill_md=GOOD_FRONTMATTER.format(name="csv-table") + body,
+            files={"scripts/run.sh": b"#!/bin/sh\r\necho hi\r\n"},
+        )
+        self.assertEqual(self.codes(directory), ["W043"])
+
+    def test_fix_repairs_mechanical_errors(self):
+        directory = self.tmp / "fix-me"
+        directory.mkdir()
+        (directory / "skill.md").write_bytes(
+            (
+                "---\r\n"
+                "name: wrong-name\r\n"
+                "description: Converts CSV: exports into tables. Use when the user asks for a table.\r\n"
+                "allowed-tools:\r\n  - Read\r\n  - Bash\r\n"
+                "---\r\n"
+                + GOOD_BODY
+                + "\nRun `scripts/run.sh`.\n"
+            ).encode("utf-8")
+        )
+        (directory / "scripts").mkdir()
+        (directory / "scripts" / "run.sh").write_bytes(b"echo ok\r\n")
+        status, out, _ = run_main(lint, [str(directory), "--fix", "--strict"])
+        self.assertEqual(status, 0, out)
+        self.assertIn("fixed", out)
+
 
 class CommandLine(LintCase):
     def test_exit_status_and_strict(self):

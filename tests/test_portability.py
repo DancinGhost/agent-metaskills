@@ -66,11 +66,17 @@ class ClaudeCodeFeatures(PortCase):
     def test_tool_names_paths_and_mcp(self):
         check = self.check(
             "Use the Bash tool, then call `AskUserQuestion`. On Gemini use run_shell_command.\n"
-            "Call mcp__github__create_issue and record it in CLAUDE.md under ~/.claude/skills/x.\n"
+            "On Antigravity call invoke_subagent. On Cursor call codebase_search.\n"
+            "Call mcp__github__create_issue and record it in CLAUDE.md under ~/.claude/skills/x and .github/copilot-instructions.md.\n"
             "Finish with /compact.\n"
         )
         adapt = " ".join(self.messages(check, port.ADAPT))
-        for expected in ("'Bash'", "'AskUserQuestion'", "'run_shell_command'", "mcp__github__create_issue", "'CLAUDE.md'", "'~/.claude/skills/x'"):
+        for expected in (
+            "'Bash'", "'AskUserQuestion'", "'run_shell_command'",
+            "'invoke_subagent'", "'codebase_search'",
+            "mcp__github__create_issue", "'CLAUDE.md'", "'~/.claude/skills/x'",
+            "'.github/copilot-instructions.md'",
+        ):
             self.assertIn(expected, adapt)
         self.assertIn("/compact", " ".join(self.messages(check, port.NOTE)))
         self.assertEqual(self.messages(check, port.BREAKS), [])

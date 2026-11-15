@@ -7,8 +7,8 @@ that a coding agent loads on demand. Writing one is easy. Knowing whether it
 loads, triggers at the right time, is safe to install, works outside the tool
 it was written in, and keeps working after the tenth edit is harder.
 
-This repository is a set of seven skills that take a skill through that whole
-life. Four of them ship a deterministic script that also runs on its own,
+This repository is a set of eleven skills that take a skill through that whole
+life. Nine of them ship a deterministic script that also runs on its own,
 without an agent, from a terminal or in CI.
 
 They follow the open Agent Skills format, so they work in Claude Code, Codex,
@@ -20,15 +20,19 @@ Gemini CLI, Antigravity and any other agent that reads `SKILL.md`.
 |---|---|---|---|
 | [skill-distill](skills/skill-distill/) | Turns the workflow you just finished into a new skill: the steps that worked, the dead ends, your corrections, the verification. | "Save this as a skill." | |
 | [skill-lint](skills/skill-lint/) | Validates a skill against the specification: frontmatter, YAML traps, broken links, orphaned files, context budget. | "Check this skill." "Why doesn't my skill load?" | `lint_skill.py` |
-| [skill-tune](skills/skill-tune/) | Fixes *when* a skill fires by testing its description against realistic requests and rewriting it. | "This skill never triggers." "The wrong skill keeps firing." | |
+| [skill-tune](skills/skill-tune/) | Fixes *when* a skill fires by testing its description against realistic requests and rewriting it. | "This skill never triggers." "The wrong skill keeps firing." | `eval_triggers.py` |
 | [skill-port](skills/skill-port/) | Finds and rewrites the parts of a skill tied to one harness so it runs in the others. | "Make this skill work in Codex." | `portability_check.py` |
 | [skill-audit](skills/skill-audit/) | Security-reviews a third-party skill before you install it. | "Is this skill safe to install?" | `scan_skill.py` |
 | [skill-inventory](skills/skill-inventory/) | Lists every skill installed across your harnesses and reports duplicates, broken skills, competing descriptions and context cost. | "Which skills do I have?" | `inventory.py` |
 | [skill-retro](skills/skill-retro/) | Post-mortem for a skill that loaded and then did the wrong thing. Traces the failure to lines in the skill and patches them. | "The skill got that wrong. Fix the skill." | |
+| [skill-diff](skills/skill-diff/) | Compares two versions of a skill in terms of trigger reach, steps, context budget and trust surface. | "Review the changes to this skill." "What changed in this skill?" | `diff_skill.py` |
+| [skill-split](skills/skill-split/) | Restructures a skill that has outgrown its context budget into a short entry point plus reference files and scripts. | "This skill is too long; split it up." | `plan_split.py` |
+| [skill-pack](skills/skill-pack/) | Builds distributable forms of a skill (specification-only directory, reproducible zip, plugin bundle) from one source. | "Package this skill for upload." | `pack_skill.py` |
+| [skill-sunset](skills/skill-sunset/) | Reads local session transcripts to find installed skills that are never used and the context tokens they cost. | "Which skills do I never use?" | `usage_report.py` |
 
 The skills refer to each other where it helps (`skill-distill` finishes by
 running `skill-lint`, `skill-retro` hands trigger problems to `skill-tune`),
-but each one works alone. Install all seven or only the ones you want.
+but each one works alone. Install all eleven or only the ones you want.
 
 ## Install
 
@@ -89,7 +93,7 @@ harness's skills directory. Start a new session afterwards.
 The scripts need Python 3.10 or later and nothing else.
 
 ```bash
-# Validate skills. Exit 1 on errors; --strict also fails on warnings.
+# Validate skills. Exit 1 on errors; --strict also fails on warnings; --fix repairs mechanical issues.
 python3 skills/skill-lint/scripts/lint_skill.py path/to/skills --strict
 
 # Triage a skill you are about to install. Exit 2 = high, 1 = medium, 0 = no match.
@@ -100,10 +104,24 @@ python3 skills/skill-inventory/scripts/inventory.py
 
 # What in this skill only works in one harness? Exit 1 if something breaks elsewhere.
 python3 skills/skill-port/scripts/portability_check.py path/to/skill
+
+# Validate a trigger evaluation set and check lexical coverage against the description.
+python3 skills/skill-tune/scripts/eval_triggers.py path/to/skill --evals path/to/evals.json
+
+# Compare two revisions of a skill in terms of triggers, sections, budget and hosts.
+python3 skills/skill-diff/scripts/diff_skill.py path/to/skill --git-ref HEAD~1
+
+# Propose how to split a long skill into references/ and scripts/.
+python3 skills/skill-split/scripts/plan_split.py path/to/skill
+
+# Build a specification-clean zip archive, directory or plugin bundle.
+python3 skills/skill-pack/scripts/pack_skill.py path/to/skill --output dist/ --format zip
+
+# Find installed skills that are never activated in session transcripts.
+python3 skills/skill-sunset/scripts/usage_report.py --days 30
 ```
 
-All four accept `--json`. The first, second and fourth take a single skill
-directory or a directory of skills.
+All nine scripts accept `--json`.
 
 The linter finds the mistakes that make a skill silently fail to load:
 
@@ -166,19 +184,11 @@ To keep the skills in your own repository valid:
 
 ## Ideas not built yet
 
-Candidates for later, roughly in order of usefulness. Issues and pull requests
-are welcome.
+Candidates for later. Issues and pull requests are welcome.
 
-- **skill-bench**: run a trigger test set against a real headless agent and
-  score it, so `skill-tune` measures real behaviour and not a judge's guess.
-- **skill-diff**: explain a change to a skill in terms of behaviour ("now also
-  triggers on X", "step 3 no longer verifies") for reviewing pull requests.
-- **skill-split**: restructure a skill that has outgrown its context budget
-  into a short entry point plus reference files.
-- **skill-pack**: build distributable forms of a skill (specification-only
-  frontmatter, zip, plugin) from one source.
-- **skill-sunset**: read session transcripts to find skills that are installed
-  and never used.
+- **skill-bench**: run a trigger test set against a live headless agent process
+  across multiple trials and score it automatically, extending `eval_triggers.py`
+  beyond static lexical checks and recorded run scores.
 
 ## Repository layout
 

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 """Lint Agent Skills against the agentskills.io specification.
 
-    python3 lint_skill.py PATH [PATH ...] [--strict] [--json]
+    python3 lint_skill.py PATH [PATH ...] [--strict] [--fix] [--json]
 
 PATH is a skill directory or a directory that contains skills. Exit status
 is 1 when any error is found (or any warning with --strict), 2 on usage
@@ -26,6 +26,8 @@ ERROR, WARNING, INFO = "error", "warning", "info"
 RESOURCE_DIRS = ("scripts", "references", "assets", "resources", "examples")
 
 LINK_RE = re.compile(r"!?\[[^\]]*\]\(\s*<?([^)\s>]+)>?(?:\s+\"[^\"]*\")?\s*\)")
+REF_DEF_RE = re.compile(r"^\s{0,3}\[([^\]]+)\]:\s*<?([^\s>]+)>?(?:\s+[\"'(].*)?$")
+HTML_ANCHOR_RE = re.compile(r"<a\s+[^>]*(?:id|name)=[\"']([^\"']+)[\"']", re.I)
 BARE_PATH_RE = re.compile(
     r"(?<![\w/.<{*-])((?:%s)/[\w./-]*\w\.\w+)" % "|".join(RESOURCE_DIRS)
 )
@@ -61,6 +63,7 @@ class Report:
         self.skill_dir = skill_dir
         self.findings: list = []
         self.budget: dict = {}
+        self.fixes: list = []
 
     def add(self, level, code, message, file="SKILL.md", line=None):
         self.findings.append(
@@ -258,38 +261,80 @@ def check_body(skill, report: Report) -> None:
             )
 
 
-def _resolve_inside(skill_dir: Path, target: str):
-    """Return (path, inside) for a link target relative to the skill."""
-    path = (skill_dir / target).resolve()
+def _resolve_inside(base_dir: Path, skill_dir: Path, target: str):
+    """Return (path, inside) for a link target resolved from base_dir."""
+    path = (base_dir / target).resolve()
     root = skill_dir.resolve()
     return path, path == root or root in path.parents
 
 
-def check_references(skill, report: Report) -> None:
-    skill_dir = skill.path
-    prose = meta.strip_fenced_code(skill.body).split("\n")
-    seen = set()
-    for offset, line in enumerate(prose):
-        number = skill.body_line + offset
-        for match in LINK_RE.finditer(line):
-            target = match.group(1).split("#")[0].split("?")[0]
-            if not target or re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I):
+def _anchors_in(md_path: Path, cache: dict) -> set:
+    key = md_path.resolve()
+    if key in cache:
+        return cache[key]
+    text = meta.read_text(md_path) or ""
+    if md_path.name == meta.SKILL_FILE:
+        _, body, _ = meta.split_frontmatter(text)
+    else:
+        body = text
+    slugs = {h["slug"] for h in meta.extract_headings(body)}
+    slugs |= {m.group(1).lower() for m in HTML_ANCHOR_RE.finditer(body)}
+    cache[key] = slugs
+    return slugs
+
+
+def _check_markdown_links(
+    skill_dir: Path,
+    base_dir: Path,
+    file_label: str,
+    prose_lines: list,
+    start_line: int,
+    seen: set,
+    anchor_cache: dict,
+    report: Report,
+) -> None:
+    for offset, line in enumerate(prose_lines):
+        number = start_line + offset
+        raw_targets = [m.group(1) for m in LINK_RE.finditer(line)]
+        ref_def = REF_DEF_RE.match(line)
+        if ref_def:
+            raw_targets.append(ref_def.group(2))
+        for raw in raw_targets:
+            no_query = raw.split("?")[0]
+            target, _, anchor = no_query.partition("#")
+            if re.match(r"^[a-z][a-z0-9+.-]*:", target, re.I):
+                continue
+            if not target:
+                if anchor:
+                    valid = _anchors_in(skill_dir / file_label, anchor_cache)
+                    if anchor.lower() not in valid:
+                        report.add(
+                            ERROR,
+                            "E040",
+                            f"link anchor '#{anchor}' does not match any heading in {file_label}",
+                            file=file_label,
+                            line=number,
+                        )
                 continue
             if target.startswith("/"):
                 report.add(
                     WARNING,
                     "W050",
                     f"link target {target!r} is an absolute path",
+                    file=file_label,
                     line=number,
                 )
                 continue
             seen.add(target)
-            path, inside = _resolve_inside(skill_dir, target)
+            path, inside = _resolve_inside(base_dir, skill_dir, target)
+            if inside and path.exists():
+                seen.add(path.relative_to(skill_dir.resolve()).as_posix())
             if not path.exists():
                 report.add(
                     ERROR,
                     "E040",
                     f"link target {target!r} does not exist",
+                    file=file_label,
                     line=number,
                 )
             elif not inside:
@@ -298,8 +343,43 @@ def check_references(skill, report: Report) -> None:
                     "W042",
                     f"link target {target!r} is outside the skill directory "
                     "and will be missing once the skill is installed",
+                    file=file_label,
                     line=number,
                 )
+            elif anchor and path.is_file() and path.suffix.lower() in (".md", ".markdown", ".mdx"):
+                valid = _anchors_in(path, anchor_cache)
+                if anchor.lower() not in valid:
+                    report.add(
+                        ERROR,
+                        "E040",
+                        f"link anchor '#{anchor}' does not match any heading in {target!r}",
+                        file=file_label,
+                        line=number,
+                    )
+
+
+def check_references(skill, report: Report) -> None:
+    skill_dir = skill.path
+    prose = meta.strip_fenced_code(skill.body).split("\n")
+    seen: set = set()
+    anchor_cache: dict = {}
+    _check_markdown_links(
+        skill_dir, skill_dir, meta.SKILL_FILE, prose, skill.body_line,
+        seen, anchor_cache, report,
+    )
+    for rel in meta.iter_files(skill_dir):
+        if rel.name == meta.SKILL_FILE or rel.suffix.lower() != ".md":
+            continue
+        if len(rel.parts) < 2 or rel.parts[0] != "references":
+            continue
+        text = meta.read_text(skill_dir / rel)
+        if text is None:
+            continue
+        ref_prose = meta.strip_fenced_code(text).split("\n")
+        _check_markdown_links(
+            skill_dir, (skill_dir / rel).parent, rel.as_posix(), ref_prose, 1,
+            seen, anchor_cache, report,
+        )
     # Commands in shell blocks are real references; paths inside sample
     # documents (markdown, yaml, json ...) are illustrations.
     fence, sample = None, False
@@ -371,6 +451,19 @@ def check_files(skill, report: Report) -> None:
                     "shell script has no shebang line",
                     file=rel.as_posix(),
                 )
+        is_script = (
+            rel.suffix in SCRIPT_SUFFIXES
+            or (len(rel.parts) > 1 and rel.parts[0] == "scripts")
+            or (rel in texts and texts[rel].startswith("#!"))
+        )
+        if is_script and "\r\n" in texts.get(rel, ""):
+            report.add(
+                WARNING,
+                "W043",
+                "script has Windows CRLF line endings, which break '#!' "
+                "execution on Linux and macOS",
+                file=rel.as_posix(),
+            )
 
     for rel, text in texts.items():
         if rel.suffix.lower() != ".md" or rel.name == meta.SKILL_FILE:
@@ -404,9 +497,70 @@ def check_files(skill, report: Report) -> None:
     }
 
 
-def lint_skill(skill_dir) -> Report:
+def fix_skill(skill_dir) -> list:
+    """Fix mechanical lint issues in place and return a list of changes made."""
     skill_dir = Path(skill_dir)
+    fixes = []
+    if not (skill_dir / meta.SKILL_FILE).is_file() and skill_dir.is_dir():
+        wrong = [p for p in skill_dir.iterdir() if p.name.lower() == "skill.md"]
+        if wrong:
+            tmp = skill_dir / ".SKILL.md.tmp"
+            wrong[0].rename(tmp)
+            tmp.rename(skill_dir / meta.SKILL_FILE)
+            fixes.append(f"renamed {wrong[0].name} to {meta.SKILL_FILE}")
+
+    for rel in meta.iter_files(skill_dir):
+        path = skill_dir / rel
+        text = meta.read_text(path)
+        if text is None:
+            continue
+        updated = text
+        is_script = (
+            rel.suffix in SCRIPT_SUFFIXES
+            or (len(rel.parts) > 1 and rel.parts[0] == "scripts")
+            or text.startswith("#!")
+        )
+        if (is_script or rel.name == meta.SKILL_FILE) and "\r\n" in updated:
+            updated = updated.replace("\r\n", "\n")
+            fixes.append(f"converted CRLF to LF in {rel.as_posix()}")
+        if rel.suffix in SCRIPT_SUFFIXES and not updated.startswith("#!"):
+            shebang = "#!/bin/sh\n" if rel.suffix == ".sh" else f"#!/usr/bin/env {rel.suffix[1:]}\n"
+            updated = shebang + updated
+            fixes.append(f"added shebang to {rel.as_posix()}")
+        if updated != text:
+            path.write_bytes(updated.encode("utf-8"))
+
+    skill = meta.load_skill(skill_dir)
+    if skill.skill_md.is_file() and skill.has_frontmatter:
+        fm = dict(skill.frontmatter)
+        changed = False
+        dir_name = skill_dir.resolve().name
+        if (
+            (not isinstance(fm.get("name"), str) or fm.get("name") != dir_name)
+            and meta.NAME_RE.match(dir_name)
+            and len(dir_name) <= meta.NAME_MAX
+        ):
+            fm["name"] = dir_name
+            changed = True
+            fixes.append(f"set frontmatter 'name' to {dir_name!r}")
+        if isinstance(fm.get("allowed-tools"), list):
+            fm["allowed-tools"] = " ".join(str(x) for x in fm["allowed-tools"])
+            changed = True
+            fixes.append("converted 'allowed-tools' list to a space-separated string")
+        if skill.problems:
+            changed = True
+            fixes.append("reformatted frontmatter YAML to remove syntax traps")
+        if changed:
+            new_text = "---\n" + meta.format_frontmatter(fm) + "\n---\n" + skill.body
+            skill.skill_md.write_bytes(new_text.encode("utf-8"))
+    return fixes
+
+
+def lint_skill(skill_dir, fix: bool = False) -> Report:
+    skill_dir = Path(skill_dir)
+    applied = fix_skill(skill_dir) if fix else []
     report = Report(skill_dir)
+    report.fixes = applied
     skill = meta.load_skill(skill_dir)
     if not skill.skill_md.is_file():
         wrong = [p.name for p in skill_dir.iterdir() if p.name.lower() == "skill.md"]
@@ -435,6 +589,8 @@ def lint_skill(skill_dir) -> Report:
 
 def format_report(report: Report) -> str:
     lines = [str(report.skill_dir)]
+    for item in report.fixes:
+        lines.append(f"  fixed   {item}")
     if not report.findings:
         lines.append("  ok")
     for finding in report.findings:
@@ -462,6 +618,7 @@ def main(argv=None) -> int:
     )
     parser.add_argument("paths", nargs="+", help="skill directory, or a directory of skills")
     parser.add_argument("--strict", action="store_true", help="treat warnings as failures")
+    parser.add_argument("--fix", action="store_true", help="fix mechanical issues in place before linting")
     parser.add_argument("--json", action="store_true", help="print machine-readable output")
     args = parser.parse_args(argv)
 
@@ -476,7 +633,7 @@ def main(argv=None) -> int:
             found = [path]  # report the missing SKILL.md rather than nothing
         skill_dirs.extend(found)
 
-    reports = [lint_skill(skill_dir) for skill_dir in skill_dirs]
+    reports = [lint_skill(skill_dir, fix=args.fix) for skill_dir in skill_dirs]
     errors = sum(r.count(ERROR) for r in reports)
     warnings = sum(r.count(WARNING) for r in reports)
 
@@ -489,6 +646,7 @@ def main(argv=None) -> int:
                             "path": str(r.skill_dir),
                             "findings": r.findings,
                             "budget": r.budget,
+                            **({"fixes": r.fixes} if r.fixes else {}),
                         }
                         for r in reports
                     ],

@@ -24,12 +24,17 @@ are yours to make.
 Paths below are relative to this skill's directory.
 
 ```bash
-python3 scripts/lint_skill.py <skill-dir-or-parent-dir> [more paths] [--strict] [--json]
+python3 scripts/lint_skill.py <skill-dir-or-parent-dir> [more paths] [--strict] [--fix] [--json]
 ```
 
 - A path may be one skill directory or a directory holding many skills.
 - Exit status is `1` when there is at least one error. With `--strict`,
   warnings fail too. Use `--strict` before publishing and in CI.
+- `--fix` repairs mechanical problems in place before linting: renames a
+  wrongly cased `skill.md`, normalises Windows CRLF line endings, adds missing
+  shell shebangs, sets `name` to match the directory, turns a list-typed
+  `allowed-tools` into a space-separated string, and reformats frontmatter YAML
+  to remove syntax traps.
 - `--json` gives the same findings as structured data, for scripting.
 
 ## Read the output

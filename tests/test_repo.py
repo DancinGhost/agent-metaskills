@@ -19,7 +19,7 @@ SCRIPTS = sorted(
 
 class Repository(unittest.TestCase):
     def test_there_are_skills(self):
-        self.assertGreaterEqual(len(SKILLS), 7)
+        self.assertGreaterEqual(len(SKILLS), 11)
 
     def test_vendored_helpers_match_the_canonical_copy(self):
         result = subprocess.run(

@@ -65,29 +65,53 @@ TOOL_NAMES = {
         "save_memory", "activate_skill", "list_directory",
     ),
     "Codex": ("apply_patch", "shell_command", "update_plan"),
+    "Antigravity": (
+        "run_command", "view_file_outline", "view_code_item", "grep_search",
+        "find_by_name", "replace_file_content", "multi_replace_file_content",
+        "invoke_subagent", "define_subagent", "manage_subagents",
+        "ask_question", "manage_task", "search_web",
+    ),
+    "Cursor": ("run_terminal_cmd", "codebase_search", "fetch_rules"),
 }
 NEUTRAL = {
     "Bash": "run a shell command", "run_shell_command": "run a shell command",
-    "shell_command": "run a shell command",
+    "shell_command": "run a shell command", "run_command": "run a shell command",
+    "run_terminal_cmd": "run a shell command",
     "Read": "read the file", "read_file": "read the file",
     "read_many_files": "read the files",
+    "view_file_outline": "inspect the file's symbols",
+    "view_code_item": "read the function or class",
     "Edit": "edit the file", "Write": "write the file",
     "write_file": "write the file", "apply_patch": "edit the file",
+    "replace_file_content": "edit the file",
+    "multi_replace_file_content": "edit the file",
     "Grep": "search file contents", "search_file_content": "search file contents",
+    "grep_search": "search file contents",
+    "codebase_search": "search the codebase",
     "Glob": "find files by name pattern", "list_directory": "list the directory",
+    "find_by_name": "find files by name pattern",
     "WebFetch": "fetch the URL", "web_fetch": "fetch the URL",
     "WebSearch": "search the web", "google_web_search": "search the web",
-    "AskUserQuestion": "ask the user", "TodoWrite": "keep a task list",
-    "update_plan": "keep a task list",
+    "search_web": "search the web",
+    "AskUserQuestion": "ask the user", "ask_question": "ask the user",
+    "TodoWrite": "keep a task list", "update_plan": "keep a task list",
+    "manage_task": "manage background tasks",
     "Task": "delegate to a subagent if one is available",
     "Agent": "delegate to a subagent if one is available",
+    "invoke_subagent": "delegate to a subagent if one is available",
+    "define_subagent": "define a subagent if supported",
+    "manage_subagents": "manage active subagents",
     "Skill": "load the other skill", "activate_skill": "load the other skill",
+    "fetch_rules": "load the relevant rule",
     "save_memory": "save a note to memory if the harness has one",
 }
 SNAKE_OR_CAMEL = re.compile(r"_|[a-z][A-Z]")
 
 HARNESS_PATH_RE = re.compile(
-    r"(~|\$HOME)?/?\.(claude|gemini|codex|cursor|agents)/[\w./-]*|\b(CLAUDE|GEMINI|AGENTS)\.md\b"
+    r"(~|\$HOME)?/?(?:\.(?:claude|gemini|codex|cursor|agents?|windsurf|opencode|copilot)|_agents?)/[\w./-]*"
+    r"|(?:\.github/)?copilot-instructions\.md\b"
+    r"|\.(?:cursorrules|windsurfrules|clinerules)\b"
+    r"|\b(?:CLAUDE|GEMINI|AGENTS)\.md\b"
 )
 SLASH_COMMAND_RE = re.compile(
     r"(?<![\w/.:-])/(compact|clear|plugin|hooks|permissions|agents|mcp|memory|model|skills|init|resume|rewind)\b(?!/)"

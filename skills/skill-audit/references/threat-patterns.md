@@ -17,6 +17,10 @@ Text the human reviewer does not see but the model does.
 - **Zero-width characters** split words to dodge keyword filters. Harmless
   cases exist (a stray byte-order mark, copy-paste from a web page), but check
   what word they sit inside.
+- **Unicode variation selectors** (U+FE00 to U+FE0F and U+E0100 to U+E01EF)
+  can smuggle arbitrary byte sequences attached to a single character.
+- **Mixed-script homographs** combine Latin letters with lookalike Cyrillic or
+  Greek characters inside one identifier, domain or package name.
 - **HTML comments** disappear in a rendered preview. Benign: an editor note or
   licence header. Hostile: instructions addressed to the agent.
 

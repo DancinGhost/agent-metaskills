@@ -18,7 +18,7 @@ matches and can misfire.
 | E021 | `description` is at most 1024 characters. | Specification limit. Listings may truncate earlier, so put the main use case first. |
 | E030 | `compatibility`, if present, is 1-500 characters. | Specification limit. |
 | E031 | `metadata`, if present, maps string keys to string values. | Nested structures are not portable. Quote numbers such as `"1.0"`. |
-| E040 | Every Markdown link to a local file resolves. | A dead link sends the agent to read something that is not there. |
+| E040 | Every Markdown link to a local file or heading anchor resolves. | A dead link or broken `#anchor` sends the agent to read something that is not there. Checked in `SKILL.md` and `references/*.md` for both inline and reference-style links. |
 
 ## Warnings
 
@@ -37,6 +37,7 @@ matches and can misfire.
 | W040 | Shell scripts start with a shebang. | Otherwise the interpreter is whatever the caller's shell happens to be. |
 | W041 | Plain-text mentions such as `scripts/run.py` resolve. *Heuristic.* | Same as E040, for paths that are not Markdown links. Only checked under `scripts/`, `references/`, `assets/`, `resources/` and `examples/`. |
 | W042 | Links stay inside the skill directory. | Anything outside is missing after installation. |
+| W043 | Scripts use LF line endings, not Windows CRLF. | A `#!` line ending in `\r` fails to find the interpreter on Linux and macOS. |
 | W050 | No machine-specific absolute paths in prose. | `/home/alex/...` exists on one machine. |
 | W060 | No leftover placeholders (`TODO`, `TBD`, `[describe ...]`). *Heuristic.* | Template residue reads as an instruction. |
 

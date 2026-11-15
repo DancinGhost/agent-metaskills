@@ -7,8 +7,10 @@ self-contained. Edit the canonical copy, then run the sync tool.
 
 from __future__ import annotations
 
+import hashlib
 import os
 import re
+import textwrap
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -88,7 +90,7 @@ def estimate_tokens(text: str) -> int:
 
 def split_frontmatter(text: str):
     """Return (frontmatter_text or None, body, body_start_line)."""
-    text = text.lstrip("\ufeff")
+    text = text.lstrip("\ufeff").replace("\r\n", "\n")
     lines = text.split("\n")
     if not lines or lines[0].strip() != "---":
         return None, text, 1
@@ -282,7 +284,7 @@ def parse_frontmatter(text: str, first_line: int = 2):
     strict YAML parser would reject or silently misread.
     """
     problems: list = []
-    data = _parse_map(text.split("\n"), first_line, problems)
+    data = _parse_map(text.replace("\r\n", "\n").split("\n"), first_line, problems)
     return data, problems
 
 
@@ -362,7 +364,7 @@ def read_text(path):
 def strip_fenced_code(text: str) -> str:
     """Blank out fenced code blocks, keeping line numbers intact."""
     out, fence = [], None
-    for line in text.split("\n"):
+    for line in text.replace("\r\n", "\n").split("\n"):
         stripped = line.lstrip()
         marker = re.match(r"(`{3,}|~{3,})", stripped)
         if fence is None and marker:
@@ -375,3 +377,155 @@ def strip_fenced_code(text: str) -> str:
         else:
             out.append(line)
     return "\n".join(out)
+
+
+STOPWORDS = set(
+    """a an and any are as at be been before by can do does for from has have
+    how if in into is it its may more must new not of on or other should so
+    such than that the their them then these this those to up use used user
+    users using when whenever where which while will with without you your
+    skill skills agent agents task tasks ask asks asked want wants need needs
+    mention mentions about also all each every etc e g i""".split()
+)
+
+
+def keywords(text: str) -> set:
+    """Extract stemmed content keywords from a skill name, description or query."""
+    words = re.findall(r"[a-z][a-z0-9+#.-]*[a-z0-9+#]|[a-z]", text.lower())
+    out = set()
+    for word in words:
+        word = word.strip(".-")
+        if len(word) < 3 or word in STOPWORDS:
+            continue
+        if word.endswith("ies") and len(word) > 5:
+            word = word[:-3] + "y"
+        elif word.endswith(("ing", "ed")) and len(word) > 5:
+            word = word[:-3] if word.endswith("ing") else word[:-2]
+        elif word.endswith("s") and not word.endswith("ss") and len(word) > 3:
+            word = word[:-1]
+        out.add(word)
+    return out
+
+
+def similarity(a: set, b: set) -> float:
+    """Jaccard similarity between two keyword sets."""
+    if not a or not b:
+        return 0.0
+    return len(a & b) / len(a | b)
+
+
+def heading_slug(title: str) -> str:
+    """GitHub-style anchor slug for a Markdown heading title."""
+    cleaned = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", title)
+    cleaned = re.sub(r"[`*_~]", "", cleaned).strip().lower()
+    cleaned = re.sub(r"[^a-z0-9\s_-]", "", cleaned)
+    return re.sub(r"\s+", "-", cleaned)
+
+
+def extract_headings(text: str, start_line: int = 1) -> list:
+    """Return Markdown headings outside fenced code as dicts with level, title, slug, line."""
+    headings = []
+    counts: dict = {}
+    for offset, line in enumerate(strip_fenced_code(text).split("\n")):
+        match = re.match(r"^\s{0,3}(#{1,6})\s+(.+?)\s*#*\s*$", line)
+        if not match:
+            continue
+        level = len(match.group(1))
+        title = match.group(2).strip()
+        base = heading_slug(title)
+        seen = counts.get(base, 0)
+        counts[base] = seen + 1
+        slug = base if seen == 0 else f"{base}-{seen}"
+        headings.append(
+            {
+                "level": level,
+                "title": title,
+                "slug": slug,
+                "line": start_line + offset,
+            }
+        )
+    return headings
+
+
+def skill_digest(skill_dir) -> str:
+    """Deterministic SHA-256 hex digest (16 chars) of a skill directory's contents."""
+    skill_dir = Path(skill_dir)
+    hasher = hashlib.sha256()
+    for rel in iter_files(skill_dir):
+        hasher.update(rel.as_posix().encode("utf-8") + b"\x00")
+        try:
+            raw = (skill_dir / rel).read_bytes()
+        except OSError:
+            continue
+        if b"\x00" not in raw[:8192]:
+            raw = raw.replace(b"\r\n", b"\n")
+        hasher.update(raw + b"\x00")
+    return hasher.hexdigest()[:16]
+
+
+def _needs_quoting(value: str) -> bool:
+    if not value:
+        return True
+    if value[0] in _RESERVED_START or value[0] in "\"'[{>|":
+        return True
+    if re.search(r":(\s|$)|\s#", value):
+        return True
+    if re.fullmatch(r"[0-9._+-]+|true|false|null|yes|no|on|off", value, re.I):
+        return True
+    return False
+
+
+def _quote_scalar(value: str) -> str:
+    escaped = value.replace("\\", "\\\\").replace('"', '\\"').replace("\n", "\\n")
+    return f'"{escaped}"'
+
+
+def format_frontmatter(data: dict) -> str:
+    """Format a frontmatter mapping into clean, portable YAML without traps."""
+    ordered = [k for k in SPEC_FIELDS if k in data]
+    ordered += [k for k in data if k not in SPEC_FIELDS]
+    lines = []
+    for key in ordered:
+        value = data[key]
+        if value is None:
+            continue
+        if isinstance(value, dict):
+            lines.append(f"{key}:")
+            for sub_key, sub_val in value.items():
+                text = str(sub_val)
+                rendered = _quote_scalar(text) if _needs_quoting(text) else text
+                lines.append(f"  {sub_key}: {rendered}")
+        elif isinstance(value, list):
+            lines.append(f"{key}:")
+            for item in value:
+                text = str(item)
+                rendered = _quote_scalar(text) if _needs_quoting(text) else text
+                lines.append(f"  - {rendered}")
+        else:
+            text = str(value).strip()
+            if key == "description" and (
+                len(text) > 60 or "\n" in text or _needs_quoting(text)
+            ):
+                lines.append(f"{key}: >-")
+                paragraphs = [p.strip() for p in text.split("\n\n") if p.strip()]
+                for idx, para in enumerate(paragraphs):
+                    if idx > 0:
+                        lines.append("")
+                    wrapped = textwrap.fill(
+                        " ".join(para.split()),
+                        width=78,
+                        initial_indent="  ",
+                        subsequent_indent="  ",
+                        break_long_words=False,
+                        break_on_hyphens=False,
+                    )
+                    lines.append(wrapped)
+            elif "\n" in text:
+                lines.append(f"{key}: |")
+                for sub_line in text.split("\n"):
+                    lines.append(f"  {sub_line}" if sub_line else "")
+            elif _needs_quoting(text):
+                lines.append(f"{key}: {_quote_scalar(text)}")
+            else:
+                lines.append(f"{key}: {text}")
+    return "\n".join(lines)

@@ -34,6 +34,10 @@ BIDI = set(range(0x202A, 0x202F)) | set(range(0x2066, 0x206A))
 ZERO_WIDTH = {0x200B, 0x200C, 0x200D, 0x200E, 0x200F, 0x2060, 0x2061,
               0x2062, 0x2063, 0x2064, 0xFEFF, 0x00AD, 0x180E}
 TAG_BLOCK = range(0xE0000, 0xE0080)
+VARIATION_SELECTORS = set(range(0xFE00, 0xFE10)) | set(range(0xE0100, 0xE01F0))
+MIXED_SCRIPT_RE = re.compile(
+    r"\b(?=\w*[A-Za-z])(?=\w*[\u0370-\u03FF\u0400-\u04FF])\w+\b"
+)
 
 EXECUTABLE_MAGIC = (
     (b"\x7fELF", "ELF executable"),
@@ -100,6 +104,8 @@ LINE_RULES = _rules(
      r"\b(webhook\.site|requestbin|pipedream\.net|ngrok(-free)?\.(io|app|dev)|pastebin\.com|paste\.ee|hastebin|transfer\.sh|0x0\.st|file\.io|termbin\.com|interact\.sh|oast\.(fun|pro|live|site)|burpcollaborator|discord(app)?\.com/api/webhooks|hooks\.slack\.com|api\.telegram\.org/bot)\b"),
     (HIGH, "exfiltration", "contacts a raw IP address",
      r"\b(https?|ftp|wss?)://\d{1,3}(\.\d{1,3}){3}\b(?!\.)"),
+    (HIGH, "exfiltration", "Markdown image URL interpolates variables or secrets to exfiltrate data on render",
+     r"!\[[^\]]*\]\(\s*https?://[^)\s]*(\$\{?[A-Za-z_][A-Za-z0-9_]*\}?|\{\{[^}]+\}\}|[?&](?:data|secret|token|key|password|env)=)"),
     (MEDIUM, "exfiltration", "uploads or posts data",
      r"\bcurl\b[^\n]{0,200}\s(-d|--data(-binary|-raw|-urlencode)?|-F|--form|-T|--upload-file|-X\s*(POST|PUT))\b|\bwget\b[^\n]{0,120}--post-(data|file)|\brequests\.(post|put)\s*\(|\burllib\.request\.urlopen\s*\([^)]*data\s*=|\bfetch\s*\([^)]*method\s*:\s*[\"'](POST|PUT)"),
     (MEDIUM, "exfiltration", "opens a raw network channel",
@@ -166,8 +172,12 @@ def visible(text: str) -> str:
     out = []
     for char in text:
         code = ord(char)
-        if code in BIDI or code in ZERO_WIDTH or code in TAG_BLOCK or (
-            code < 0x20 and char not in "\t"
+        if (
+            code in BIDI
+            or code in ZERO_WIDTH
+            or code in TAG_BLOCK
+            or code in VARIATION_SELECTORS
+            or (code < 0x20 and char not in "\t")
         ):
             out.append(f"<U+{code:04X}>")
         else:
@@ -202,6 +212,25 @@ def check_unicode(scan: Scan, rel: str, text: str) -> None:
                 MEDIUM, "hidden-text",
                 "zero-width or invisible characters",
                 rel, number, visible(line),
+            )
+        vs_count = sum(1 for c in line if ord(c) in VARIATION_SELECTORS)
+        if vs_count >= 2 or any(0xE0100 <= ord(c) < 0xE01F0 for c in line):
+            scan.add(
+                HIGH, "hidden-text",
+                "Unicode variation selectors can smuggle hidden byte sequences",
+                rel, number, visible(line),
+            )
+        match = MIXED_SCRIPT_RE.search(line)
+        if match:
+            word = match.group(0)
+            annotated = "".join(
+                c if ord(c) < 128 else f"{c}<U+{ord(c):04X}>" for c in word
+            )
+            scan.add(
+                HIGH, "hidden-text",
+                f"mixed-script identifier {annotated!r} combines Latin with "
+                "Cyrillic or Greek characters (homograph risk)",
+                rel, number, line,
             )
 
 
@@ -240,12 +269,11 @@ def check_markdown(scan: Scan, rel: str, text: str) -> None:
 
 
 def check_lines(scan: Scan, rel: str, text: str) -> None:
-    for number, line in enumerate(text.split("\n"), 1):
-        if len(line) > 4000:
-            sample = line[:4000]
-        else:
-            sample = line
-        hits = set()
+    raw_lines = text.split("\n")
+    hits_by_line: dict = {}
+    for number, line in enumerate(raw_lines, 1):
+        sample = line[:4000] if len(line) > 4000 else line
+        hits = hits_by_line.setdefault(number, set())
         for severity, category, message, pattern in LINE_RULES:
             match = pattern.search(sample)
             if match and (category, message) not in hits:
@@ -276,6 +304,39 @@ def check_lines(scan: Scan, rel: str, text: str) -> None:
                     "URL shortener hides the real destination",
                     rel, number, match.group(0),
                 )
+
+    # Join backslash-continued lines so split commands cannot evade LINE_RULES.
+    index = 0
+    while index < len(raw_lines):
+        if not raw_lines[index].rstrip().endswith("\\"):
+            index += 1
+            continue
+        start_num = index + 1
+        parts = [raw_lines[index].rstrip()[:-1]]
+        end = index + 1
+        while end < len(raw_lines):
+            stripped = raw_lines[end].rstrip()
+            if stripped.endswith("\\"):
+                parts.append(stripped[:-1].lstrip())
+                end += 1
+            else:
+                parts.append(stripped.lstrip())
+                end += 1
+                break
+        joined = " ".join(parts)[:4000]
+        existing = set()
+        for num in range(start_num, end + 1):
+            existing |= hits_by_line.get(num, set())
+        for severity, category, message, pattern in LINE_RULES:
+            match = pattern.search(joined)
+            if match and (category, message) not in existing:
+                existing.add((category, message))
+                start = max(0, match.start() - 40)
+                scan.add(
+                    severity, category, message, rel, start_num,
+                    visible(joined[start: match.end() + 80]),
+                )
+        index = end
 
 
 def check_frontmatter(scan: Scan, skill) -> None:

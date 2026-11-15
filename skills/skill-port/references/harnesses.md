@@ -11,7 +11,11 @@ documentation, the documentation wins.
 | Claude Code | `~/.claude/skills/<name>/` | `.claude/skills/<name>/`, also in nested subdirectories | Plugins: `<plugin>/skills/<name>/`, invoked as `/<plugin>:<name>`. Enterprise: managed settings directory. |
 | Codex | `~/.agents/skills/<name>/` | `.agents/skills/<name>/` in the working directory and each parent up to the repository root | Admin: `/etc/codex/skills/`. |
 | Gemini CLI | `~/.gemini/skills/<name>/` or `~/.agents/skills/<name>/` | `.gemini/skills/<name>/` or `.agents/skills/<name>/` | Extensions bundle their own skills. |
-| Antigravity | `~/.gemini/config/skills/<name>/` | `.agents/skills/<name>/` | Built-in skills ship with the product. |
+| Antigravity | `~/.gemini/config/skills/<name>/` | `.agents/skills/<name>/` or `.agent/skills/<name>/` | Plugins: `~/.gemini/config/plugins/<plugin>/skills/<name>/`. Built-in skills ship with the product. |
+| Cursor | `~/.cursor/skills/<name>/` | `.cursor/skills/<name>/` or `.agents/skills/<name>/` | Also reads project rules under `.cursor/rules/`. |
+| Windsurf | `~/.codeium/windsurf/skills/<name>/` | `.windsurf/skills/<name>/` or `.agents/skills/<name>/` | Also reads `.windsurf/rules/`. |
+| GitHub Copilot | `~/.copilot/skills/<name>/` | `.github/skills/<name>/` | Also reads `.github/copilot-instructions.md`. |
+| OpenCode | `~/.config/opencode/skills/<name>/` | `.opencode/skills/<name>/` or `.agents/skills/<name>/` | Also reads `.claude/skills/<name>/` for compatibility. |
 
 `.agents/skills/` (project) and `~/.agents/skills/` (user) are read by Codex
 and Gemini CLI, and the project form by Antigravity. Claude Code does not read

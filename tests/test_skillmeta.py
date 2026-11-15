@@ -16,6 +16,18 @@ class SplitFrontmatter(unittest.TestCase):
         self.assertIsNone(meta.split_frontmatter("# Title\n")[0])
         self.assertIsNone(meta.split_frontmatter("---\nname: a\nBody\n")[0])
 
+    def test_crlf_line_endings_are_normalised(self):
+        front, body, line = meta.split_frontmatter(
+            "---\r\nname: demo\r\ndescription: >-\r\n  line one\r\n  line two\r\n---\r\nBody\r\n"
+        )
+        self.assertEqual(line, 7)
+        self.assertNotIn("\r", front)
+        self.assertNotIn("\r", body)
+        data, problems = meta.parse_frontmatter(front)
+        self.assertEqual(problems, [])
+        self.assertEqual(data["name"], "demo")
+        self.assertEqual(data["description"], "line one line two")
+
     def test_byte_order_mark_is_ignored(self):
         front, _, _ = meta.split_frontmatter("﻿---\nname: a\n---\n")
         self.assertEqual(front, "name: a")
@@ -126,6 +138,36 @@ class Discovery(SkillCase):
         self.assertEqual(len(stripped.split("\n")), len(text.split("\n")))
         self.assertNotIn("rm -rf", stripped)
         self.assertEqual([l for l in stripped.split("\n") if l], ["a", "b", "c"])
+
+    def test_extract_headings_and_slugs(self):
+        md = "# Title\n```bash\n# not a heading\n```\n## 1. Check `SKILL.md`\n## 1. Check `SKILL.md`\n"
+        headings = meta.extract_headings(md, start_line=10)
+        self.assertEqual(
+            headings,
+            [
+                {"level": 1, "title": "Title", "slug": "title", "line": 10},
+                {"level": 2, "title": "1. Check `SKILL.md`", "slug": "1-check-skillmd", "line": 14},
+                {"level": 2, "title": "1. Check `SKILL.md`", "slug": "1-check-skillmd-1", "line": 15},
+            ],
+        )
+
+    def test_format_frontmatter_roundtrips_cleanly(self):
+        raw = {
+            "name": "demo",
+            "description": "Converts CSV: tables and #tags. Use when asked.",
+            "metadata": {"version": "1.0.0"},
+        }
+        rendered = meta.format_frontmatter(raw)
+        parsed, problems = meta.parse_frontmatter(rendered)
+        self.assertEqual(problems, [])
+        self.assertEqual(parsed["name"], "demo")
+        self.assertEqual(parsed["description"], raw["description"])
+        self.assertEqual(parsed["metadata"]["version"], "1.0.0")
+
+    def test_skill_digest_ignores_crlf_difference(self):
+        one = self.make_skill("one", skill_md="---\nname: one\n---\nBody\n")
+        two = self.make_skill("two", skill_md="---\r\nname: one\r\n---\r\nBody\r\n")
+        self.assertEqual(meta.skill_digest(one), meta.skill_digest(two))
 
 
 if __name__ == "__main__":
